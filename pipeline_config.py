@@ -14,6 +14,9 @@ G1_DIR = MENAGERIE_ROOT / "unitree_g1"
 H1_DIR = MENAGERIE_ROOT / "unitree_h1"
 SHADOW_DIR = MENAGERIE_ROOT / "shadow_hand"
 
+# Robot model paths (for Pinocchio / validation)
+G1_URDF = PROJECT_ROOT / "models" / "unitree_g1" / "g1.urdf"
+
 # Pipeline data directories
 CALIB_DIR = PROJECT_ROOT / "wrist_trajectories"
 OUT_DIR = PROJECT_ROOT / "sim_renders"
