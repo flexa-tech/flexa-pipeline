@@ -68,9 +68,10 @@ def run_synthetic(robot, task, session_name=None):
     return video_path
 
 
-def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=None):
+def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=None,
+                     trim_enabled=False, trim_start=None, trim_end=None):
     """Real R3D mode: full pipeline from .r3d to simulation video."""
-    total = 6
+    total = 7
     r3d_path = Path(r3d_path).resolve()
 
     if not r3d_path.exists():
@@ -161,10 +162,28 @@ def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=No
     validate_file(calib_path, "Calibrated JSON")
     log_stage(5, total, "Workspace calibration", "done")
 
-    # Stage 6: Simulation
-    log_stage(6, total, f"Run {robot} simulation -> video")
+    # Stage 6: Trim trajectory (optional, enabled by --trim)
+    if trim_enabled:
+        log_stage(6, total, "Trim trajectory -> action window")
+        from trim_trajectory import trim_and_save
+        trim_info = trim_and_save(
+            session_name,
+            start=trim_start,
+            end=trim_end,
+        )
+        if trim_info:
+            duration = trim_info['duration_s']
+            print(f"  Trimmed to {trim_info['trimmed_frames']} frames ({duration}s)")
+        else:
+            print("  WARNING: Trim failed, using full trajectory")
+        log_stage(6, total, "Trim trajectory", "done")
+    else:
+        log_stage(6, total, "Trim trajectory", "skip")
+
+    # Stage 7: Simulation
+    log_stage(7, total, f"Run {robot} simulation -> video")
     video_path = run_simulation(robot, session_name, task)
-    log_stage(6, total, f"Run {robot} simulation", "done")
+    log_stage(7, total, f"Run {robot} simulation", "done")
 
     return video_path
 
@@ -369,6 +388,12 @@ Examples:
                         help="Session name (default: derived from filename)")
     parser.add_argument("--output", type=str, default=None,
                         help="Output directory (default: sim_renders/)")
+    parser.add_argument("--trim", action="store_true", default=False,
+                        help="Trim trajectory to action window (15-30s)")
+    parser.add_argument("--trim-start", type=int, default=None,
+                        help="Manual trim start frame (overrides auto-detection)")
+    parser.add_argument("--trim-end", type=int, default=None,
+                        help="Manual trim end frame (overrides auto-detection)")
     args = parser.parse_args()
 
     if args.output:
@@ -383,7 +408,12 @@ Examples:
     if args.synthetic:
         video = run_synthetic(args.robot, args.task, args.session)
     else:
-        video = run_r3d_pipeline(args.r3d, args.robot, args.task, args.session, args.objects)
+        video = run_r3d_pipeline(
+            args.r3d, args.robot, args.task, args.session, args.objects,
+            trim_enabled=args.trim,
+            trim_start=args.trim_start,
+            trim_end=args.trim_end,
+        )
 
     elapsed = time.time() - t0
     print(f"\n{'='*60}")
