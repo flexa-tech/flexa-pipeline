@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.3
 milestone_name: milestone
 status: verifying
-last_updated: "2026-03-14T06:43:00Z"
-last_activity: 2026-03-14 — Completed quick task 2: Build Pinocchio-based trajectory validator
+last_updated: "2026-03-14T12:30:00Z"
+last_activity: 2026-03-14 — Completed quick task 3: End-to-end HaMeR pipeline test on stack2
 progress:
   total_phases: 3
   completed_phases: 3
@@ -23,6 +23,7 @@ Last activity: 2026-03-14 — Completed quick task 2: Build Pinocchio-based traj
 
 - [x] QT-001: Automate session progress capture to Obsidian (vault-capture.sh)
 - [x] QT-002: Build Pinocchio-based trajectory validator
+- [x] QT-003: End-to-end HaMeR pipeline test on stack2
 
 ### Quick Tasks Completed
 
@@ -30,6 +31,7 @@ Last activity: 2026-03-14 — Completed quick task 2: Build Pinocchio-based traj
 |---|-------------|------|--------|-----------|
 | 1 | Automate session progress capture to Obsidian | 2026-03-14 | 6a04467 | [1-vault-capture](./quick/1-vault-capture/) |
 | 2 | Build Pinocchio-based trajectory validator | 2026-03-14 | 73ff194 | [2-build-pinocchio-based-trajectory-validat](./quick/2-build-pinocchio-based-trajectory-validat/) |
+| 3 | End-to-end HaMeR pipeline test on stack2 | 2026-03-14 | 98f60a5 | [3-end-to-end-hamer-pipeline-test-on-stack2](./quick/3-end-to-end-hamer-pipeline-test-on-stack2/) |
 
 ## Project Reference
 
@@ -72,7 +74,14 @@ See: .planning/PROJECT.md (updated 2026-03-14)
   - egocrowd/hand_pose.py: Stub replaced with Modal remote call
   - run_pipeline.py: wrist_3d_camera passthrough + --hamer/--no-hamer flags
   - reconstruct_wrist_3d.py: cam_to_world helper + HaMeR 3D path skips depth lookup
-  - Deployment testing deferred (needs Modal auth + MANO model files)
+  - Deployed and tested on stack2: 99% detection rate (vs 52% MediaPipe baseline)
+  - Running in gdino-only mode (HaMeR mesh recovery fails to load on Modal)
+  - Modal API updated: Function.lookup → Function.from_name (modal v1.3.5)
+  - Detection threshold lowered from 0.2 → 0.15 (confidence values cluster around 0.20-0.21)
+  - Grasping heuristic improved: aspect-ratio based (was box-area based)
+  - No wrist_3d_camera output yet (requires HaMeR model to load); falls back to depth unprojection
+  - Pipeline completes all 7 stages with --hamer flag
+  - Simulation renders successfully (robot grasps and moves block, STACKED=False)
 - Phase 3 plan 02 code complete: grasp visual quality
   - FINGER_PRESHAPE constant + PRESHAPE_DIST_START/FULL thresholds
   - Distance-based finger pre-shaping with quadratic ease-in during approach
@@ -93,3 +102,4 @@ See: .planning/PROJECT.md (updated 2026-03-14)
 9. **Combined Modal function** -- single A10G runs both GroundingDINO + HaMeR to avoid double cold-start penalty
 10. **HaMeR --no-deps install** -- prevents mmcv/detectron2 transitive conflicts; manually install needed deps (smplx, timm, einops)
 11. **Graceful 3-tier fallback** -- HaMeR mesh -> GroundingDINO detection-only -> MediaPipe (CPU); no frame-level mixing between models
+12. **GroundingDINO threshold 0.15** -- egocentric hand views produce low confidence (~0.20-0.21); lowering from 0.2 to 0.15 increases detection from 27% to 99%
