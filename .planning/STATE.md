@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T14:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 10: Fix sim block placement — use objects_sim positions (STACKED=False — IK tracking/grasping signal bottleneck)
+last_activity: 2026-03-14 — Completed quick task 11: Fix grasping signal — post-hoc temporal filter + tighten HaMeR threshold
 progress:
   total_phases: 3
   completed_phases: 3
@@ -31,6 +31,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-008: Fix trim to include approach phase before grasp onset (STACKED=False — IK/calibration bottleneck)
 - [x] QT-009: Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False — block placement/grasping signal bottleneck)
 - [x] QT-010: Fix sim block placement — use objects_sim positions (STACKED=False — IK tracking/grasping signal bottleneck)
+- [x] QT-011: Fix grasping signal — post-hoc temporal filter + tighten HaMeR threshold
 
 ### Quick Tasks Completed
 
@@ -46,6 +47,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 8 | Fix trim to include approach phase (STACKED=False) | 2026-03-14 | a72ec7b | [8-fix-trim-to-include-approach-phase-befor](./quick/8-fix-trim-to-include-approach-phase-befor/) |
 | 9 | Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False) | 2026-03-14 | 7fbe221 | [9-fix-calibration-scale-anchor-wrist-to-ob](./quick/9-fix-calibration-scale-anchor-wrist-to-ob/) |
 | 10 | Fix sim block placement — use objects_sim positions (STACKED=False) | 2026-03-14 | c9ba311 | [10-fix-sim-block-placement-use-objects-sim-](./quick/10-fix-sim-block-placement-use-objects-sim-/) |
+| 11 | Fix grasping signal — temporal filter + tighten threshold | 2026-03-14 | 33b9568 | [11-fix-grasping-signal-post-hoc-temporal-fi](./quick/11-fix-grasping-signal-post-hoc-temporal-fi/) |
 
 ## Project Reference
 
