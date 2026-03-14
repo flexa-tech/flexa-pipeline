@@ -42,6 +42,11 @@ FINGER_CLOSED = np.array([0.4, -0.5, -0.6, 0.8, 0.9, 0.8, 0.9])  # partial closu
 FINGER_GAIN_MULTIPLIER = 25.0
 BLEND_FRAMES = 12  # smooth blend from rest to hand-tracking
 
+# Reachable workspace envelope for IK target clamping (RET-03)
+# Derived from G1 right arm reach + table geometry
+WORKSPACE_MIN = np.array([0.10, -0.45, 0.80])   # X_min, Y_min, Z_min
+WORKSPACE_MAX = np.array([0.65,  0.30, 1.20])   # X_max, Y_max, Z_max
+
 
 def scene_xml(obj_xml: str) -> str:
     return f"""<mujoco>
@@ -302,6 +307,11 @@ def render_task(task_name: str):
 
     finger_ctrl = FINGER_OPEN.copy()
     last_arm_q = SEED.copy()
+
+    # Tracking variables for RET-03 diagnostics
+    ik_failures = []     # list of (frame_idx, error_m) tuples
+    n_clamped = 0        # count of frames where target was workspace-clamped
+    palm_positions = []  # recorded palm positions for RMS error (RET-01)
 
     # --- Kinematic block attachment state (Franka v9 pattern) ---
     grasped_obj = None       # which object name is currently grasped
