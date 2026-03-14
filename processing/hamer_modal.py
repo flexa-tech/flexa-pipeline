@@ -22,7 +22,7 @@ hamer_image = (
         "smplx==0.1.28", "timm", "einops",
         "yacs", "chumpy", "gdown",
         "scikit-image", "pytorch-lightning",
-        "pyrender", "trimesh", "PyOpenGL",
+        "pyrender==0.1.45", "trimesh", "PyOpenGL", "pyglet<2",
     )
     # Clone HaMeR with submodules (includes ViTPose) and install both packages.
     # --no-deps avoids pulling mmcv/detectron2 transitively. No || echo -- fail loudly.
@@ -61,7 +61,7 @@ hamer_image = (
         "ls -la /root/_DATA/hamer_ckpts/checkpoints/ && "
         "ls -la /root/_DATA/vitpose_ckpts/"
     )
-    .env({"CACHE_DIR_HAMER": "/root/_DATA"})
+    .env({"CACHE_DIR_HAMER": "/root/_DATA", "PYOPENGL_PLATFORM": "egl"})
     .workdir("/root")
 )
 
