@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T14:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 8: Fix trim to include approach phase (STACKED=False — IK/calibration bottleneck)
+last_activity: 2026-03-14 — Completed quick task 9: Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False — block placement/grasping signal bottleneck)
 progress:
   total_phases: 3
   completed_phases: 3
@@ -29,6 +29,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-006: Fix HaMeR calibration — use wrist_pixel depth unprojection
 - [x] QT-007: Validator diagnostics + pipeline re-test (STACKED=False — trim window lacks approach phase)
 - [x] QT-008: Fix trim to include approach phase before grasp onset (STACKED=False — IK/calibration bottleneck)
+- [x] QT-009: Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False — block placement/grasping signal bottleneck)
 
 ### Quick Tasks Completed
 
@@ -42,6 +43,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 6 | Fix HaMeR calibration — use wrist_pixel depth unprojection | 2026-03-14 | 8fde274 | [6-fix-hamer-calibration-use-wrist-pixel-de](./quick/6-fix-hamer-calibration-use-wrist-pixel-de/) |
 | 7 | Validator diagnostics + pipeline re-test (STACKED=False) | 2026-03-14 | 598f335 | [7-pinocchio-validator-diagnostics-full-pip](./quick/7-pinocchio-validator-diagnostics-full-pip/) |
 | 8 | Fix trim to include approach phase (STACKED=False) | 2026-03-14 | a72ec7b | [8-fix-trim-to-include-approach-phase-befor](./quick/8-fix-trim-to-include-approach-phase-befor/) |
+| 9 | Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False) | 2026-03-14 | 7fbe221 | [9-fix-calibration-scale-anchor-wrist-to-ob](./quick/9-fix-calibration-scale-anchor-wrist-to-ob/) |
 
 ## Project Reference
 
@@ -100,6 +102,9 @@ See: .planning/PROJECT.md (updated 2026-03-14)
   - New trim window [403,703) has 4s approach (grip=False), 30.0s duration
   - STACKED=False persists — bottleneck is IK/calibration (RMS=0.080m), not trim window
   - Next: investigate calibration scale (0.222) compressing motion
+  - QT-009: Calibration scale=1.0, grasp centroid anchor, manual object handling
+  - Wrist X range now [-0.613, 0.964] (was compressed to ~0.35m by scale=0.222)
+  - STACKED=False — block placement derives from wrist extremes (0.368m apart), grasping signal mostly True
 - Phase 3 plan 02 code complete: grasp visual quality
   - FINGER_PRESHAPE constant + PRESHAPE_DIST_START/FULL thresholds
   - Distance-based finger pre-shaping with quadratic ease-in during approach
