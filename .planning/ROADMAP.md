@@ -10,7 +10,7 @@
 
 ## Phase Details
 
-### Phase 1: Foundations
+### Phase 1: Foundations --- COMPLETE (2026-03-14)
 **Goal:** Smooth raw trajectories and trim video output to make retargeting viable and iteration fast.
 **Requirements:** TRK-01, TRK-02, TRK-03, OUT-01, OUT-02
 
@@ -20,8 +20,9 @@ Two parallel workstreams:
 Interpolate gaps with gap-length-aware strategy and apply Savitzky-Golay spatial filter while preserving the binary grasping signal.
 - Plan 01 complete: EMA replaced with SavGol, gap-aware interpolation, velocity clamp, grasping guard. STACKED=True passes.
 
-**1b — Video Trimming (OUT-01, OUT-02)**
+**1b — Video Trimming (OUT-01, OUT-02)** --- COMPLETE (Plan 02, 2026-03-14)
 Auto-detect action window from grasping signal and wrist velocity; cut 95s renders down to 15-30s.
+- Plan 02 complete: trim_trajectory.py with velocity+grasping detection, sliding-window cluster focus. Stack2 trimmed 95s->22.9s. STACKED=True passes.
 
 **Success Criteria:**
 1. Smoothed wrist trajectory has zero NaN gaps and no jumps >3cm between consecutive frames
