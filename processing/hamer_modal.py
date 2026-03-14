@@ -13,7 +13,8 @@ app = modal.App("flexa-hamer")
 
 hamer_image = (
     modal.Image.debian_slim(python_version="3.10")
-    .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0", "unzip", "wget")
+    .apt_install("git", "libgl1-mesa-glx", "libglib2.0-0", "libegl1-mesa-dev",
+                 "unzip", "wget")
     .pip_install(
         "torch==2.4.0", "torchvision==0.19.0",
         "transformers>=4.36.0",
@@ -21,6 +22,7 @@ hamer_image = (
         "smplx==0.1.28", "timm", "einops",
         "yacs", "chumpy", "gdown",
         "scikit-image", "pytorch-lightning",
+        "pyrender", "trimesh", "PyOpenGL",
     )
     # Clone HaMeR with submodules (includes ViTPose) and install both packages.
     # --no-deps avoids pulling mmcv/detectron2 transitively. No || echo -- fail loudly.
