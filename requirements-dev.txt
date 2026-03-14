@@ -7,4 +7,5 @@ mujoco>=3.0
 Pillow>=9.0
 matplotlib
 tqdm
-pyliblzfse
+liblzfse
+transformers

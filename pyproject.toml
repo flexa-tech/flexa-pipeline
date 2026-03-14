@@ -50,9 +50,6 @@ all = [
     "flexa-pipeline[sim]",
 ]
 
-[project.scripts]
-flexa = "egocrowd.cli:main"
-
 [project.urls]
 Repository = "https://github.com/ChristianNyamekye/flexa-pipeline"
 

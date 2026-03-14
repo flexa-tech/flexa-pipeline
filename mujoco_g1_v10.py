@@ -37,7 +37,7 @@ SEED = np.array([0.0, 0.0, 0.0, 2.4, 0.0, -1.5, 0.0])
 
 HAND_CTRL_START = 36
 FINGER_OPEN = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-FINGER_CLOSED = np.array([0.8, -1.2, -1.5, 1.5, 1.6, 1.5, 1.6])
+FINGER_CLOSED = np.array([0.4, -0.5, -0.6, 0.8, 0.9, 0.8, 0.9])  # partial closure — wrap around block, not through it
 
 FINGER_GAIN_MULTIPLIER = 25.0
 BLEND_FRAMES = 12  # smooth blend from rest to hand-tracking
