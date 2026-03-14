@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T14:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 11: Fix grasping signal — post-hoc temporal filter + tighten HaMeR threshold
+last_activity: 2026-03-14 — Completed quick task 12: Pipeline re-run verification — STACKED=False, grasping signal still too noisy
 progress:
   total_phases: 3
   completed_phases: 3
@@ -32,6 +32,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-009: Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False — block placement/grasping signal bottleneck)
 - [x] QT-010: Fix sim block placement — use objects_sim positions (STACKED=False — IK tracking/grasping signal bottleneck)
 - [x] QT-011: Fix grasping signal — post-hoc temporal filter + tighten HaMeR threshold
+- [x] QT-012: Re-run pipeline with grasping fix — STACKED=False, grasping signal still 90% True in trimmed window
 
 ### Quick Tasks Completed
 
@@ -48,13 +49,14 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 9 | Fix calibration scale=1.0 + grasp centroid anchor (STACKED=False) | 2026-03-14 | 7fbe221 | [9-fix-calibration-scale-anchor-wrist-to-ob](./quick/9-fix-calibration-scale-anchor-wrist-to-ob/) |
 | 10 | Fix sim block placement — use objects_sim positions (STACKED=False) | 2026-03-14 | c9ba311 | [10-fix-sim-block-placement-use-objects-sim-](./quick/10-fix-sim-block-placement-use-objects-sim-/) |
 | 11 | Fix grasping signal — temporal filter + tighten threshold | 2026-03-14 | 33b9568 | [11-fix-grasping-signal-post-hoc-temporal-fi](./quick/11-fix-grasping-signal-post-hoc-temporal-fi/) |
+| 12 | Re-run pipeline — STACKED=False, grasping still noisy | 2026-03-14 | 06dbd93 | [12-re-run-pipeline-with-grasping-fix-and-ve](./quick/12-re-run-pipeline-with-grasping-fix-and-ve/) |
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** The robot must faithfully reproduce the human's actual hand motion — true retargeting, not choreographed animation.
-**Current focus:** Phase 3 plan 02 code complete (grasp quality). Next: run simulation to verify STACKED=True, then deploy HaMeR Modal function.
+**Current focus:** STACKED=False persists. Grasping signal is the primary bottleneck — aspect-ratio heuristic fires True for 90% of trimmed frames. Need to fix grasping detection (use HaMeR hand pose or proximity-gated approach).
 
 ## Accumulated Context
 
@@ -115,6 +117,14 @@ See: .planning/PROJECT.md (updated 2026-03-14)
   - Collision exclusion (contype/conaffinity=0) during kinematic hold
   - Collision restored on release
   - STACKED=True verification pending (needs simulation run)
+- QT-012 verification: pipeline re-run after grasping fix
+  - GRASP CLEAN: 66% -> 59% (only 72 frames removed, insufficient)
+  - Trim window [407,707), 300 frames, 30.0s
+  - STACKED=False — block_a knocked off table at F140 by closed-fist sweep
+  - Grip onset at trimmed F030, palm 0.334m from block (never close before grip=True)
+  - 90% of trimmed frames are grip=True — aspect-ratio heuristic is unreliable
+  - IK: RMS=0.099m, 146/300 frames with >2cm error, 105/300 clamped
+  - Next: fix grasping detection (use hand pose or proximity-gating)
 
 ## Decisions Log
 
