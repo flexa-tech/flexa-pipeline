@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T14:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 12: Pipeline re-run verification — STACKED=False, grasping signal still too noisy
+last_activity: 2026-03-14 — Completed quick task 13: Proximity-gated grasping — only flag grip when wrist < 15cm from object
 progress:
   total_phases: 3
   completed_phases: 3
@@ -33,6 +33,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-010: Fix sim block placement — use objects_sim positions (STACKED=False — IK tracking/grasping signal bottleneck)
 - [x] QT-011: Fix grasping signal — post-hoc temporal filter + tighten HaMeR threshold
 - [x] QT-012: Re-run pipeline with grasping fix — STACKED=False, grasping signal still 90% True in trimmed window
+- [x] QT-013: Proximity-gated grasping — only flag grip when wrist < 15cm from object
 
 ### Quick Tasks Completed
 
@@ -50,13 +51,14 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 10 | Fix sim block placement — use objects_sim positions (STACKED=False) | 2026-03-14 | c9ba311 | [10-fix-sim-block-placement-use-objects-sim-](./quick/10-fix-sim-block-placement-use-objects-sim-/) |
 | 11 | Fix grasping signal — temporal filter + tighten threshold | 2026-03-14 | 33b9568 | [11-fix-grasping-signal-post-hoc-temporal-fi](./quick/11-fix-grasping-signal-post-hoc-temporal-fi/) |
 | 12 | Re-run pipeline — STACKED=False, grasping still noisy | 2026-03-14 | 06dbd93 | [12-re-run-pipeline-with-grasping-fix-and-ve](./quick/12-re-run-pipeline-with-grasping-fix-and-ve/) |
+| 13 | Proximity-gated grasping — wrist < 15cm from object | 2026-03-14 | c8cb2b2 | [13-proximity-gated-grasping-only-flag-grip-](./quick/13-proximity-gated-grasping-only-flag-grip-/) |
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-03-14)
 
 **Core value:** The robot must faithfully reproduce the human's actual hand motion — true retargeting, not choreographed animation.
-**Current focus:** STACKED=False persists. Grasping signal is the primary bottleneck — aspect-ratio heuristic fires True for 90% of trimmed frames. Need to fix grasping detection (use HaMeR hand pose or proximity-gated approach).
+**Current focus:** Proximity-gated grasping implemented (QT-013). Need pipeline re-run to verify grasping signal is now accurate near objects only.
 
 ## Accumulated Context
 
