@@ -16,8 +16,9 @@
 
 Two parallel workstreams:
 
-**1a — Trajectory Smoothing (TRK-01, TRK-02, TRK-03)**
+**1a — Trajectory Smoothing (TRK-01, TRK-02, TRK-03)** --- COMPLETE (Plan 01, 2026-03-14)
 Interpolate gaps with gap-length-aware strategy and apply Savitzky-Golay spatial filter while preserving the binary grasping signal.
+- Plan 01 complete: EMA replaced with SavGol, gap-aware interpolation, velocity clamp, grasping guard. STACKED=True passes.
 
 **1b — Video Trimming (OUT-01, OUT-02)**
 Auto-detect action window from grasping signal and wrist velocity; cut 95s renders down to 15-30s.
