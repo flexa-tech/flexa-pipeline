@@ -62,10 +62,10 @@ Requirements for True Retargeting & Quality milestone. Each maps to roadmap phas
 | TRK-03 | 1 | Complete |
 | OUT-01 | 1 | Complete |
 | OUT-02 | 1 | Complete |
-| RET-01 | 2 | Pending |
-| RET-02 | 2 | Pending |
-| RET-03 | 2 | Pending |
-| RET-04 | 2 | Pending |
+| RET-01 | 2 | Complete |
+| RET-02 | 2 | Complete |
+| RET-03 | 2 | Complete |
+| RET-04 | 2 | Complete |
 | TRK-04 | 3 | Pending |
 | TRK-05 | 3 | Pending |
 | OUT-03 | 3 | Pending |
