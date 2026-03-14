@@ -325,6 +325,18 @@ renderer = mujoco.Renderer(model, RENDER_H, RENDER_W)
 
     print(f"\nTrajectory: {n} frames, grip [{ls},{le}], pick={pick_nm}, support={support_nm}")
 
+    # === RET-04: Trajectory workspace validation ===
+    print(f"  Wrist X: [{wrist[:,0].min():.3f}, {wrist[:,0].max():.3f}]")
+    print(f"  Wrist Y: [{wrist[:,1].min():.3f}, {wrist[:,1].max():.3f}]")
+    print(f"  Wrist Z: [{wrist[:,2].min():.3f}, {wrist[:,2].max():.3f}]")
+    print(f"  Workspace clamp: X[{WORKSPACE_MIN[0]:.2f},{WORKSPACE_MAX[0]:.2f}] "
+          f"Y[{WORKSPACE_MIN[1]:.2f},{WORKSPACE_MAX[1]:.2f}] "
+          f"Z[{WORKSPACE_MIN[2]:.2f},{WORKSPACE_MAX[2]:.2f}]")
+    pick_in_x = wrist[:,0].min() <= desired_pick_xy[0] <= wrist[:,0].max()
+    pick_in_y = wrist[:,1].min() <= desired_pick_xy[1] <= wrist[:,1].max()
+    print(f"  Pick block ({desired_pick_xy.round(3)}) within wrist XY range: "
+          f"X={'yes' if pick_in_x else 'NO'} Y={'yes' if pick_in_y else 'NO'}")
+
     for i in range(n):
         # === RET-01: Follow real wrist trajectory for ALL frames ===
         target = wrist[i].copy()
@@ -473,7 +485,7 @@ renderer = mujoco.Renderer(model, RENDER_H, RENDER_W)
                 bpos = data.qpos[obj_qadr[bi]:obj_qadr[bi]+3]
                 block_dists[nm] = np.linalg.norm(pc - bpos)
             attached = grasped_obj or "none"
-            print(f"F{i:03d} p={p:.2f} grip={want_grip} attached={attached} palm={pc.round(3)} "
+            print(f"F{i:03d} grip={want_grip} attached={attached} palm={pc.round(3)} "
                   f"dists={{{', '.join(f'{k}:{v:.3f}' for k,v in block_dists.items())}}} "
                   f"block_z={{{', '.join(f'{k}:{v:.3f}' for k,v in block_zs.items())}}}")
 
