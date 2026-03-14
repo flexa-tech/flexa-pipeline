@@ -196,6 +196,18 @@ def render_task(task_name: str):
     right_hand_sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "right_hand")
     print(f"left_hand site: {left_hand_sid}, right_hand site: {right_hand_sid}")
 
+    # Fingertip bodies for centroid-based IK targeting
+    rh_tip_names = ["rh_ffdistal", "rh_mfdistal", "rh_rfdistal", "rh_lfdistal", "rh_thdistal"]
+    rh_tip_bids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, bn) for bn in rh_tip_names]
+    rh_palm_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "rh_palm")
+
+    def fingertip_grasp_center():
+        """Get the ideal grasp center: weighted average of palm + fingertips + thumb."""
+        palm_pos = data.xpos[rh_palm_bid].copy()
+        finger_centroid = np.mean([data.xpos[bid] for bid in rh_tip_bids[:4]], axis=0)
+        thumb_pos = data.xpos[rh_tip_bids[4]].copy()
+        return 0.4 * palm_pos + 0.35 * finger_centroid + 0.25 * thumb_pos
+
     # Block body IDs
     block_names = ["left_cube_to_rotate", "right_cube_to_rotate"]
     block_bids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, bn) for bn in block_names]
@@ -214,10 +226,14 @@ def render_task(task_name: str):
     pick_qa = model.jnt_qposadr[pick_jnt]
     support_qa = model.jnt_qposadr[support_jnt]
 
-    # Table surface at z=1.05, place blocks on table near right hand
+    # Table surface at z=1.05, place blocks on table
+    # Use fingertip grasp center for block placement — this is where fingers converge
+    grasp_center = fingertip_grasp_center()
+    print(f"Fingertip grasp center: {grasp_center.round(3)}")
     table_z = 1.05 + BLOCK_HALF + 0.005
-    pick_pos = np.array([rh_pos[0] + 0.08, rh_pos[1], table_z])
-    support_pos = np.array([rh_pos[0] + 0.08, rh_pos[1] + 0.12, table_z])
+    # Place pick block under grasp center XY, on the table
+    pick_pos = np.array([grasp_center[0], grasp_center[1], table_z])
+    support_pos = np.array([grasp_center[0], grasp_center[1] + 0.12, table_z])
 
     data.qpos[pick_qa:pick_qa+3] = pick_pos
     data.qpos[pick_qa+3:pick_qa+7] = [1, 0, 0, 0]
@@ -264,10 +280,23 @@ def render_task(task_name: str):
         mujoco.mj_step(model, data)
     mujoco.mj_forward(model, data)
 
+    # Blocks may have shifted during settle — re-place them at desired XY with settled Z
+    settled_z = data.qpos[pick_qa+2]  # table surface height from settle
+    data.qpos[pick_qa:pick_qa+3] = [pick_pos[0], pick_pos[1], settled_z]
+    data.qpos[pick_qa+3:pick_qa+7] = [1, 0, 0, 0]
+    data.qpos[support_qa:support_qa+3] = [support_pos[0], support_pos[1], settled_z]
+    data.qpos[support_qa+3:support_qa+7] = [1, 0, 0, 0]
+    # Zero block velocities
+    pick_da = model.jnt_dofadr[pick_jnt]
+    support_da = model.jnt_dofadr[support_jnt]
+    data.qvel[pick_da:pick_da+6] = 0
+    data.qvel[support_da:support_da+6] = 0
+    mujoco.mj_forward(model, data)
+
     pick_settled = data.qpos[pick_qa:pick_qa+3].copy()
     support_settled = data.qpos[support_qa:support_qa+3].copy()
-    print(f"Pick block settled: {pick_settled.round(3)}")
-    print(f"Support block settled: {support_settled.round(3)}")
+    print(f"Pick block placed: {pick_settled.round(3)}")
+    print(f"Support block placed: {support_settled.round(3)}")
 
     # Grip window
     grip_idx = np.where(grasping > 0)[0]
@@ -278,10 +307,10 @@ def render_task(task_name: str):
     win = max(1, le - ls)
     print(f"Trajectory: {n} frames, grip window [{ls}, {le}]")
 
-    # Grasp heights
-    z_grasp = pick_settled[2] + 0.02
-    z_hover = z_grasp + 0.12
-    z_lift = z_grasp + 0.15
+    # Grasp heights — need hand to descend INTO block for finger wrap
+    z_grasp = pick_settled[2] - 0.005  # slightly below block center so fingers surround it
+    z_hover = z_grasp + 0.08  # low hover, not too far
+    z_lift = z_grasp + 0.12
 
     # Action scaling (from HumanoidBench wrapper)
     action_low = np.array([model.actuator_ctrlrange[i][0] for i in body_act_idxs])
@@ -349,23 +378,41 @@ def render_task(task_name: str):
         right_arm_qa.append(model.jnt_qposadr[rw_jid])
         right_arm_da.append(model.jnt_dofadr[rw_jid])
 
-    def ik_right_hand(target, max_iter=80):
-        """Simple IK to move right hand site to target."""
+    # Build joint limit arrays for IK clamping
+    ik_joint_ids = []
+    for jname in ["right_shoulder_pitch", "right_shoulder_roll", "right_shoulder_yaw", "right_elbow", "right_wrist_yaw"]:
+        jid_val = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jname)
+        if jid_val >= 0:
+            ik_joint_ids.append(jid_val)
+    ik_lo = np.array([model.jnt_range[j][0] for j in ik_joint_ids])
+    ik_hi = np.array([model.jnt_range[j][1] for j in ik_joint_ids])
+
+    # Compute static offset from hand site to grasp center (in initial open-hand pose)
+    grasp_offset = grasp_center - data.site_xpos[right_hand_sid].copy()
+    print(f"Grasp offset (site→centroid): {grasp_offset.round(3)}")
+
+    def ik_right_hand(target, max_iter=200):
+        """IK to move palm body to target (offset from grasp center).
+        Uses palm body Jacobian for stability."""
+        # Palm is behind the grasp center; compute palm target
+        palm_target = target - grasp_offset  # grasp_offset = grasp_center - site ≈ palm offset
         jac = np.zeros((3, model.nv))
         jac_r = np.zeros((3, model.nv))
-        for _ in range(max_iter):
+        for it in range(max_iter):
             mujoco.mj_forward(model, data)
-            hand_pos = data.site_xpos[right_hand_sid].copy()
-            err = target - hand_pos
-            if np.linalg.norm(err) < 0.005:
+            palm_pos = data.xpos[rh_palm_bid].copy()
+            err = palm_target - palm_pos
+            dist = np.linalg.norm(err)
+            if dist < 0.003:
                 break
-            mujoco.mj_jacSite(model, data, jac, jac_r, right_hand_sid)
+            mujoco.mj_jacBody(model, data, jac, jac_r, rh_palm_bid)
             J = jac[:, right_arm_da]
-            JJT = J @ J.T + 0.005 * np.eye(3)
+            damping = 0.001 + 0.01 * max(0, 1.0 - dist * 10)
+            JJT = J @ J.T + damping * np.eye(3)
             dq = J.T @ np.linalg.solve(JJT, err)
-            step = min(0.5, 0.2 + np.linalg.norm(err))
+            step = min(0.8, 0.3 + dist * 2)
             for i, qa in enumerate(right_arm_qa):
-                data.qpos[qa] += dq[i] * step
+                data.qpos[qa] = np.clip(data.qpos[qa] + dq[i] * step, ik_lo[i], ik_hi[i])
 
     # Main loop
     for i in range(n):
@@ -462,12 +509,20 @@ def render_task(task_name: str):
 
         # Log
         if i % 10 == 0:
-            rh_pos = data.site_xpos[right_hand_sid]
+            gc = fingertip_grasp_center()
             pick_pos_cur = data.qpos[pick_qa:pick_qa+3]
             sup_pos_cur = data.qpos[support_qa:support_qa+3]
             pelvis_z = data.qpos[2]
-            dist_to_pick = np.linalg.norm(rh_pos - pick_pos_cur)
-            print(f"F{i:03d} p={p:.2f} grip={want_grip} pelvis_z={pelvis_z:.3f} rh={rh_pos.round(3)} target={target.round(3)} dist_pick={dist_to_pick:.3f} pick_z={pick_pos_cur[2]:.3f} sup_z={sup_pos_cur[2]:.3f}")
+            dist_gc_pick = np.linalg.norm(gc - pick_pos_cur)
+            # Count hand-block contacts
+            contacts = 0
+            for c in range(data.ncon):
+                g1, g2 = data.contact[c].geom1, data.contact[c].geom2
+                b1 = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[g1]) or ""
+                b2 = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[g2]) or ""
+                if (b1.startswith("rh_") and "cube" in b2) or (b2.startswith("rh_") and "cube" in b1):
+                    contacts += 1
+            print(f"F{i:03d} p={p:.2f} grip={want_grip} gc={gc.round(3)} dist_pick={dist_gc_pick:.3f} contacts={contacts} pick_z={pick_pos_cur[2]:.3f} sup_z={sup_pos_cur[2]:.3f}")
 
     # Final positions
     pick_final = data.qpos[pick_qa:pick_qa+3]
