@@ -219,6 +219,15 @@ def process_session(session):
 
     # TRK-02: Savitzky-Golay spatial filter (zero-phase, preserves grasp dwell)
     smoothed = smooth_trajectory_savgol(interpolated, window_length=7, polyorder=3)
+
+    # Velocity clamp: limit frame-to-frame displacement to 3cm
+    MAX_STEP = 0.03  # 3cm per frame at 10fps = 0.3 m/s
+    for i in range(1, len(smoothed)):
+        delta = smoothed[i] - smoothed[i-1]
+        norm = np.linalg.norm(delta)
+        if norm > MAX_STEP:
+            smoothed[i] = smoothed[i-1] + delta * (MAX_STEP / norm)
+
     assert not np.isnan(smoothed).any(), "NaN values after smoothing"
 
     # Validate: check for large jumps
