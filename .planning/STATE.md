@@ -17,7 +17,7 @@ progress:
 Phase: 3 — Quality Uplift
 Plan: 02 — Grasp Visual Quality (CODE COMPLETE, verification pending)
 Status: Finger pre-shaping + collision exclusion implemented. Needs `python mujoco_g1_v10.py stack2` to verify STACKED=True (OUT-05).
-Last activity: 2026-03-14 — Completed quick task 2: Build Pinocchio-based trajectory validator
+Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (STACKED=False — hand doesn't reach block, trajectory needs fixing)
 
 ## Quick Tasks
 
@@ -33,6 +33,7 @@ Last activity: 2026-03-14 — Completed quick task 2: Build Pinocchio-based traj
 | 1 | Automate session progress capture to Obsidian | 2026-03-14 | 6a04467 | [1-vault-capture](./quick/1-vault-capture/) |
 | 2 | Build Pinocchio-based trajectory validator | 2026-03-14 | 73ff194 | [2-build-pinocchio-based-trajectory-validat](./quick/2-build-pinocchio-based-trajectory-validat/) |
 | 3 | End-to-end HaMeR pipeline test on stack2 | 2026-03-14 | 98f60a5 | [3-end-to-end-hamer-pipeline-test-on-stack2](./quick/3-end-to-end-hamer-pipeline-test-on-stack2/) |
+| 4 | Replace kinematic attachment with physics-based grasping | 2026-03-14 | 4e94895 | [4-replace-kinematic-attachment-with-physic](./quick/4-replace-kinematic-attachment-with-physic/) |
 | 4 | Replace kinematic attachment with physics-based grasping | 2026-03-14 | 4e94895 | [4-replace-kinematic-attachment-with-physic](./quick/4-replace-kinematic-attachment-with-physic/) |
 
 ## Project Reference
