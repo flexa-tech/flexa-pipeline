@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""G1 v10: Kinematic block attachment (Franka v9 pattern).
+"""G1 v10: Contact-based physics grasping.
 
-Rewritten to use the same kinematic-attach approach as mujoco_franka_v9.py:
 - Arm joints set kinematically via IK
-- Block grasping uses smooth-blend kinematic attachment (no adhesion)
-- Fingers close visually during grip
-- No block pinning, no adhesion actuators, no contact pads
+- Block grasping uses pure contact friction (no kinematic attachment)
+- Fingers physically close around block; MuJoCo friction solver holds it
+- Support block pinned for stability; pick block fully dynamic
 
 Output: sim_renders/<task>_g1_v10.mp4
 """
@@ -23,7 +22,7 @@ G1_TABLE_HEIGHT = 0.78
 RENDER_W, RENDER_H = 640, 480
 FPS = 10
 TIMESTEP = 0.002
-SUBSTEPS = max(10, min(50, int(1.0 / (FPS * TIMESTEP))))
+SUBSTEPS = max(25, min(50, int(1.0 / (FPS * TIMESTEP))))
 
 RIGHT_ARM_JOINTS = [
     "right_shoulder_pitch_joint", "right_shoulder_roll_joint",
@@ -37,20 +36,89 @@ SEED = np.array([0.0, 0.0, 0.0, 2.4, 0.0, -1.5, 0.0])
 
 HAND_CTRL_START = 36
 FINGER_OPEN = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-FINGER_CLOSED = np.array([0.4, -0.5, -0.6, 0.8, 0.9, 0.8, 0.9])  # partial closure — wrap around block, not through it
+FINGER_CLOSED = np.array([0.48, -0.60, -0.72, 0.96, 1.08, 0.96, 1.08])  # tighter wrap for contact grip (~1.2x)
 FINGER_PRESHAPE = np.array([0.2, -0.25, -0.3, 0.4, 0.45, 0.4, 0.45])  # 50% of CLOSED — anticipatory curl
 
 # Distance-based pre-shaping thresholds (OUT-03)
 PRESHAPE_DIST_START = 0.20   # begin finger curl at 20cm from nearest block
 PRESHAPE_DIST_FULL  = 0.06   # full pre-shape at 6cm (approximately block diameter)
 
-FINGER_GAIN_MULTIPLIER = 25.0
-BLEND_FRAMES = 12  # smooth blend from rest to hand-tracking
+FINGER_GAIN_MULTIPLIER = 40.0
+
 
 # Reachable workspace envelope for IK target clamping (RET-03)
 # Derived from G1 right arm reach + table geometry
 WORKSPACE_MIN = np.array([0.10, -0.45, 0.80])   # X_min, Y_min, Z_min
 WORKSPACE_MAX = np.array([0.65,  0.30, 1.20])   # X_max, Y_max, Z_max
+
+
+def debounce_grasping(grasping, min_on=25, on_thresh=3, off_thresh=20, merge_gap=150):
+    """Debounce noisy grasping signal into clean grip/release cycles.
+
+    Two-pass approach:
+    1. State-machine debounce: hysteresis with on/off thresholds + min duration
+    2. Merge nearby events: bridge gaps shorter than merge_gap frames
+
+    MediaPipe's ~52% detection rate produces scattered single-frame grasping
+    estimates. This smooths them into 1-2 sustained grip events.
+    """
+    g = np.array(grasping, dtype=float)
+    n = len(g)
+    result = np.zeros(n, dtype=float)
+    state = False
+    count = 0
+    on_start = 0
+
+    # Pass 1: State-machine debounce
+    for i in range(n):
+        if state:
+            if g[i] < 0.5:
+                count += 1
+                if count >= off_thresh and (i - on_start) >= min_on:
+                    state = False
+                    count = 0
+            else:
+                count = 0
+        else:
+            if g[i] > 0.5:
+                count += 1
+                if count >= on_thresh:
+                    state = True
+                    on_start = i - count + 1
+                    result[max(0, i - count + 1):i + 1] = 1.0
+                    count = 0
+            else:
+                count = 0
+        if state:
+            result[i] = 1.0
+
+    # Pass 2: Merge grip events separated by < merge_gap frames
+    segments = []
+    in_seg = False
+    seg_start = 0
+    for i in range(n):
+        if result[i] > 0.5 and not in_seg:
+            seg_start = i
+            in_seg = True
+        elif result[i] < 0.5 and in_seg:
+            segments.append((seg_start, i - 1))
+            in_seg = False
+    if in_seg:
+        segments.append((seg_start, n - 1))
+
+    if len(segments) > 1:
+        merged = [segments[0]]
+        for s, e in segments[1:]:
+            prev_s, prev_e = merged[-1]
+            if s - prev_e <= merge_gap:
+                merged[-1] = (prev_s, e)
+            else:
+                merged.append((s, e))
+        result = np.zeros(n, dtype=float)
+        for s, e in merged:
+            result[s:e + 1] = 1.0
+
+    return result
 
 
 def scene_xml(obj_xml: str) -> str:
@@ -132,21 +200,20 @@ def build_objects(obj_names):
             f'<body name="{nm}" pos="0 0 0">'
             f'<freejoint name="{nm}_jnt"/>'
             f'<geom type="box" size="{BLOCK_HALF} {BLOCK_HALF} {BLOCK_HALF}" rgba="{c}" mass="0.3" '
-            f'friction="2.0 0.01 0.001" contype="1" conaffinity="1"/>'
+            f'friction="3.0 0.02 0.002" condim="4" contype="1" conaffinity="1"/>'
             f'</body>'
         )
     return "\n    ".join(parts)
 
 
-def smoothstep(t):
-    t = np.clip(t, 0.0, 1.0)
-    return t * t * (3 - 2 * t)
-
-
 def render_task(task_name: str):
     calib = json.loads((CALIB_DIR / f"{task_name}_calibrated.json").read_text())
     wrist = np.array(calib["wrist_sim"], dtype=float)
-    grasping = np.array(calib["grasping"], dtype=float)
+    grasping_raw = np.array(calib["grasping"], dtype=float)
+    grasping = debounce_grasping(grasping_raw)
+    n_raw = int(grasping_raw.sum())
+    n_debounced = int(grasping.sum())
+    print(f"  Grasping debounce: {n_raw} raw → {n_debounced} debounced frames")
     objects_raw = calib["objects_sim"]
 
     if isinstance(objects_raw, dict):
@@ -169,6 +236,14 @@ def render_task(task_name: str):
             model.actuator_gainprm[ai, 0] *= FINGER_GAIN_MULTIPLIER
             model.actuator_biasprm[ai, 1] *= FINGER_GAIN_MULTIPLIER
 
+    # Set high friction + torsional/rolling on right-hand finger geoms for contact grip
+    for gi in range(model.ngeom):
+        bid = model.geom_bodyid[gi]
+        bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, bid) or ""
+        if bname.startswith("right_hand_"):
+            model.geom_friction[gi] = [3.0, 0.02, 0.002]
+            model.geom_condim[gi] = 4
+
     key_id = jid(model, "stand", mujoco.mjtObj.mjOBJ_KEY)
     mujoco.mj_resetDataKeyframe(model, data, key_id)
 
@@ -182,25 +257,62 @@ def render_task(task_name: str):
     obj_qadr = [model.jnt_qposadr[j] for j in obj_jids]
     obj_body_ids = [jid(model, nm, mujoco.mjtObj.mjOBJ_BODY) for nm in obj_names]
 
-    # Workspace correction: place blocks in reachable workspace
+    # Derive block positions from wrist trajectory during grip phases
     table_x_offset = 0.32 - 0.5
-    desired_pick_xy = np.array([0.38, -0.03])
-    desired_support_xy = desired_pick_xy + np.array([0.0, -0.28])
-
-    # Determine pick vs support
     n = len(wrist)
     grip_idx = np.where(grasping > 0)[0]
-    late = grip_idx[grip_idx >= int(0.6*n)]
-    if len(late) < 3:
-        late = grip_idx[-max(1, len(grip_idx)//2):] if len(grip_idx) else np.array([n-10])
-    ls, le = int(late[0]), int(min(late[-1]+5, n-1))
-    win = max(1, le-ls)
 
-    avg_xy = wrist[ls:le, :2].mean(axis=0)
-    pick_nm = min(obj_names, key=lambda nm: np.linalg.norm(obj_xy[nm] - avg_xy))
+    if len(grip_idx) >= 10:
+        # Pick position: where the hand is at GRIP ONSET (first 15% of grip)
+        onset_count = max(5, len(grip_idx) // 7)
+        grip_onset = grip_idx[:onset_count]
+        desired_pick_xy = wrist[grip_onset, :2].mean(axis=0)
+
+        # Place position: where the hand is at GRIP END (last 15% of grip)
+        grip_offset = grip_idx[-onset_count:]
+        desired_place_xy = wrist[grip_offset, :2].mean(axis=0)
+
+        # Support block goes at the place position (block gets stacked on it)
+        desired_support_xy = desired_place_xy.copy()
+
+        # Ensure minimum separation so blocks don't overlap at start
+        sep = np.linalg.norm(desired_pick_xy - desired_support_xy)
+        min_sep = 4 * BLOCK_HALF  # 12cm
+        if sep < min_sep:
+            direction = desired_support_xy - desired_pick_xy
+            if np.linalg.norm(direction) > 0.01:
+                direction = direction / np.linalg.norm(direction) * min_sep
+            else:
+                direction = np.array([0.0, -min_sep])
+            desired_support_xy = desired_pick_xy + direction
+    else:
+        # No grip data — fall back to wrist midpoint
+        desired_pick_xy = wrist[n // 4, :2].copy()
+        desired_support_xy = wrist[3 * n // 4, :2].copy()
+
+    # Clamp to reachable table area
+    table_xy_min = np.array([0.15, -0.40])
+    table_xy_max = np.array([0.55, 0.25])
+    desired_pick_xy = np.clip(desired_pick_xy, table_xy_min, table_xy_max)
+    desired_support_xy = np.clip(desired_support_xy, table_xy_min, table_xy_max)
+
+    print(f"  Block placement from wrist trajectory:")
+    print(f"    Pick block at:    XY=({desired_pick_xy[0]:.3f}, {desired_pick_xy[1]:.3f})")
+    print(f"    Support block at: XY=({desired_support_xy[0]:.3f}, {desired_support_xy[1]:.3f})")
+    print(f"    Separation: {np.linalg.norm(desired_pick_xy - desired_support_xy):.3f}m")
+
+    # Determine which calibrated object is pick vs support
+    # (pick = closer to grip onset wrist, support = other)
+    pick_nm = min(obj_names, key=lambda nm: np.linalg.norm(obj_xy[nm] - desired_pick_xy))
     support_nm = [x for x in obj_names if x != pick_nm][0] if len(obj_names) >= 2 else None
 
-    # Update positions to desired workspace
+    # Compute late grip window for compatibility with downstream code
+    late = grip_idx[grip_idx >= int(0.6 * n)]
+    if len(late) < 3:
+        late = grip_idx[-max(1, len(grip_idx) // 2):] if len(grip_idx) else np.array([n - 10])
+    ls, le = int(late[0]), int(min(late[-1] + 5, n - 1))
+
+    # Place blocks at trajectory-derived positions
     obj_xy[pick_nm] = desired_pick_xy - np.array([table_x_offset, 0.0])
     if support_nm is not None:
         obj_xy[support_nm] = desired_support_xy - np.array([table_x_offset, 0.0])
@@ -313,21 +425,6 @@ def render_task(task_name: str):
     n_clamped = 0        # count of frames where target was workspace-clamped
     palm_positions = []  # recorded palm positions for RMS error (RET-01)
 
-    # --- Kinematic block attachment state (Franka v9 pattern) ---
-    grasped_obj = None       # which object name is currently grasped
-    grasped_bid = None       # body id of grasped object
-    grasped_jnt_adr = None   # qpos address of grasped object's freejoint
-    grasp_offset = None      # relative XYZ offset (block_pos - palm_pos at grasp time)
-    grasp_start_pos = None   # block position at grasp time (for smooth blend)
-    grasp_quat = None        # block orientation at grasp time
-    grasp_age = 0            # frames since grasp started
-    # Post-release: brief settle at actual position (prevents bounce, then clears)
-    placed_jnt_adr = None
-    placed_dof_adr = None
-    placed_pos = None
-    placed_countdown = 0
-    SETTLE_FRAMES = n  # pin through end of trajectory to prevent finger-block collision bounce
-
     print(f"\nTrajectory: {n} frames, grip [{ls},{le}], pick={pick_nm}, support={support_nm}")
 
     # === RET-04: Trajectory workspace validation ===
@@ -370,75 +467,11 @@ def render_task(task_name: str):
         if ik_err > 0.02:  # 2cm convergence threshold
             ik_failures.append((i, float(ik_err)))
 
-        # ATTACH: when want_grip=True and palm is close enough to a block
-        if want_grip and grasped_obj is None:
-            best_dist, best_name, best_bid2 = 1e9, None, None
-            for name, bid in zip(obj_names, obj_body_ids):
-                bpos = data.xpos[bid].copy()
-                xy_dist = np.linalg.norm(bpos[:2] - pc[:2])
-                z_gap = abs(pc[2] - bpos[2])
-                if xy_dist < best_dist:
-                    best_dist = xy_dist
-                    best_name = name
-                    best_bid2 = bid
-            if best_dist < 0.15 and abs(pc[2] - data.xpos[best_bid2][2]) < 0.08:
-                grasped_obj = best_name
-                grasped_bid = best_bid2
-                jnt_name = f"{best_name}_jnt"
-                jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, jnt_name)
-                grasped_jnt_adr = model.jnt_qposadr[jnt_id]
-                block_pos = data.xpos[grasped_bid].copy()
-                grasp_offset = block_pos - pc
-                grasp_start_pos = block_pos.copy()
-                grasp_quat = data.qpos[grasped_jnt_adr+3:grasped_jnt_adr+7].copy()
-                grasp_age = 0
-                print(f"  F{i:03d} GRASP: {best_name} (dist={best_dist:.3f})")
-                # Disable grasped block collision during kinematic hold (OUT-04)
-                for gi in block_geom_ids:
-                    if model.geom_bodyid[gi] == grasped_bid:
-                        model.geom_contype[gi] = 0
-                        model.geom_conaffinity[gi] = 0
-
-        # RELEASE: brief settle at actual XY + correct stack Z (no teleport)
-        if not want_grip and grasped_obj is not None:
-            jnt_idx = obj_jids[obj_names.index(grasped_obj)]
-            dof_adr = model.jnt_dofadr[jnt_idx]
-            data.qvel[dof_adr:dof_adr + 6] = 0
-            # Pin at actual XY (where hand carried it) + correct stack Z
-            if support_nm is not None:
-                stack_z = support_settled_pos[2] + 2 * BLOCK_HALF
-                placed_jnt_adr = grasped_jnt_adr
-                placed_dof_adr = dof_adr
-                placed_pos = np.array([
-                    data.qpos[grasped_jnt_adr],      # actual X from carry
-                    data.qpos[grasped_jnt_adr + 1],   # actual Y from carry
-                    stack_z                             # exact contact stack Z
-                ])
-                placed_countdown = SETTLE_FRAMES
-            # Restore block collision on release (OUT-04)
-            for gi in block_geom_ids:
-                if model.geom_bodyid[gi] == grasped_bid:
-                    model.geom_contype[gi] = 1
-                    model.geom_conaffinity[gi] = 1
-
-            print(f"  F{i:03d} RELEASE: {grasped_obj} at z={data.qpos[grasped_jnt_adr+2]:.3f}")
-            grasped_obj = None
-            grasped_bid = None
-            grasped_jnt_adr = None
-            grasp_offset = None
-            grasp_start_pos = None
-            grasp_quat = None
-            grasp_age = 0
-
-        # Increment blend counter
-        if grasped_obj is not None:
-            grasp_age += 1
-
         # Finger control with distance-based pre-shaping (OUT-03)
         if want_grip:
-            # Full closure for data-driven grasp
+            # Full closure for contact grasp — fast close to grip before block slips
             finger_target = FINGER_CLOSED
-            blend_rate = 0.25
+            blend_rate = 0.4
         else:
             # Distance-based pre-shaping: curl fingers as palm approaches block
             min_block_dist = min(
@@ -472,41 +505,8 @@ def render_task(task_name: str):
                 data.qpos[supp_qa + 3:supp_qa + 7] = [1, 0, 0, 0]
                 data.qvel[supp_da:supp_da + 6] = 0
 
-            # Post-release: brief settle pin (clears after SETTLE_FRAMES)
-            if placed_jnt_adr is not None and placed_countdown > 0:
-                data.qpos[placed_jnt_adr:placed_jnt_adr+3] = placed_pos
-                data.qpos[placed_jnt_adr+3:placed_jnt_adr+7] = [1, 0, 0, 0]
-                data.qvel[placed_dof_adr:placed_dof_adr+6] = 0
-
-            # Kinematic block attachment: block tracks palm with smooth onset
-            if grasped_jnt_adr is not None:
-                pc_sub = palm_center(model, data)
-                target_pos = pc_sub + grasp_offset
-                # Smooth blend over BLEND_FRAMES
-                blend_t = min(1.0, grasp_age / BLEND_FRAMES)
-                blend_t = blend_t * blend_t * (3 - 2 * blend_t)  # smoothstep
-                blended_pos = np.array([
-                    grasp_start_pos[0] * (1 - blend_t) + target_pos[0] * blend_t,
-                    grasp_start_pos[1] * (1 - blend_t) + target_pos[1] * blend_t,
-                    max(grasp_start_pos[2], target_pos[2])  # Z always goes UP
-                ])
-                data.qpos[grasped_jnt_adr:grasped_jnt_adr+3] = blended_pos
-                data.qpos[grasped_jnt_adr+3:grasped_jnt_adr+7] = grasp_quat
-                # Zero velocity so physics doesn't fight the kinematic hold
-                jnt_idx = obj_jids[obj_names.index(grasped_obj)]
-                dof_adr = model.jnt_dofadr[jnt_idx]
-                data.qvel[dof_adr:dof_adr+6] = 0
-
             data.ctrl[HAND_CTRL_START:HAND_CTRL_START+7] = finger_ctrl
             mujoco.mj_step(model, data)
-
-        # Decrement settle countdown; clear state when done
-        if placed_countdown > 0:
-            placed_countdown -= 1
-            if placed_countdown == 0:
-                placed_jnt_adr = None
-                placed_dof_adr = None
-                placed_pos = None
 
         renderer.update_scene(data, camera="front")
         Image.fromarray(renderer.render()).save(fd / f"frame_{i:04d}.png")
@@ -519,8 +519,7 @@ def render_task(task_name: str):
                 bi = obj_names.index(nm)
                 bpos = data.qpos[obj_qadr[bi]:obj_qadr[bi]+3]
                 block_dists[nm] = np.linalg.norm(pc - bpos)
-            attached = grasped_obj or "none"
-            print(f"F{i:03d} grip={want_grip} attached={attached} palm={pc.round(3)} "
+            print(f"F{i:03d} grip={want_grip} palm={pc.round(3)} "
                   f"dists={{{', '.join(f'{k}:{v:.3f}' for k,v in block_dists.items())}}} "
                   f"block_z={{{', '.join(f'{k}:{v:.3f}' for k,v in block_zs.items())}}}")
 
@@ -556,13 +555,19 @@ def render_task(task_name: str):
         pos = data.qpos[qa:qa+3]
         print(f"FINAL {nm}: xyz=({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
 
-    za = data.qpos[obj_qadr[0]+2]
-    zb = data.qpos[obj_qadr[1]+2] if len(obj_qadr) > 1 else 0
+    pos_a = data.qpos[obj_qadr[0]:obj_qadr[0]+3].copy()
+    pos_b = data.qpos[obj_qadr[1]:obj_qadr[1]+3].copy() if len(obj_qadr) > 1 else np.zeros(3)
+    za, zb = pos_a[2], pos_b[2]
     top_z = max(za, zb)
     bot_z = min(za, zb)
-    stacked = abs(top_z - bot_z - 2*BLOCK_HALF) < 0.02
+    z_ok = abs(top_z - bot_z - 2 * BLOCK_HALF) < 0.02
+    xy_dist = np.linalg.norm(pos_a[:2] - pos_b[:2])
+    xy_ok = xy_dist < 2 * BLOCK_HALF  # blocks must be horizontally aligned
+    stacked = z_ok and xy_ok
     print(f"\n=== v10 RESULT ===")
-    print(f"STACK CHECK: top_z={top_z:.3f} bot_z={bot_z:.3f} gap={top_z-bot_z:.3f} expected={2*BLOCK_HALF:.3f} STACKED={stacked}")
+    print(f"STACK CHECK: top_z={top_z:.3f} bot_z={bot_z:.3f} gap={top_z-bot_z:.3f} expected={2*BLOCK_HALF:.3f}")
+    print(f"  Z aligned: {z_ok}  XY dist: {xy_dist:.3f}m (< {2*BLOCK_HALF:.3f}m): {xy_ok}")
+    print(f"  STACKED={stacked}")
     print(f"pick={pick_nm} support={support_nm}")
     sep = np.linalg.norm(desired_pick_xy - desired_support_xy)
     print(f"Block separation: {sep:.3f}m")
