@@ -399,7 +399,7 @@ def render_task(task_name: str):
                     best_dist = xy_dist
                     best_name = name
                     best_bid2 = bid
-            if best_dist < 0.08 and abs(pc[2] - data.xpos[best_bid2][2]) < 0.06:
+            if best_dist < 0.15 and abs(pc[2] - data.xpos[best_bid2][2]) < 0.08:
                 grasped_obj = best_name
                 grasped_bid = best_bid2
                 jnt_name = f"{best_name}_jnt"
