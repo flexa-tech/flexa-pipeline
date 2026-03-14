@@ -103,6 +103,28 @@ def detect_action_window(wrist_sim, grasping, fps=10):
         start += reduce_before
         end -= reduce_after
 
+        # If still too long, action_frames span exceeds target_max.
+        # Focus on the densest cluster: find the best target_max-sized sliding window
+        # over action_frames that contains the most frames.
+        if (end - start) > target_max:
+            best_count = 0
+            best_start_idx = 0
+            for i in range(len(action_frames)):
+                # Find how many action_frames fit in [action_frames[i], action_frames[i] + target_max - margin_before - margin_after)
+                window_end = action_frames[i] + target_max - margin_before - margin_after
+                count = np.searchsorted(action_frames, window_end, side='right') - i
+                if count > best_count:
+                    best_count = count
+                    best_start_idx = i
+            # Use the densest window
+            focus_start = int(action_frames[best_start_idx])
+            # Find the last action frame within this window
+            window_end_frame = focus_start + target_max - margin_before - margin_after
+            focus_end_idx = np.searchsorted(action_frames, window_end_frame, side='right') - 1
+            focus_end = int(action_frames[focus_end_idx])
+            start = max(0, focus_start - margin_before)
+            end = min(n, focus_end + margin_after)
+
     return int(start), int(end)
 
 
