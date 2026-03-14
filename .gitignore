@@ -17,6 +17,7 @@ raw_captures/
 capture/
 processed_sessions/
 processing/
+!processing/*.py
 hamer_results/
 modal_results/
 gpu_retargeted/

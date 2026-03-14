@@ -42,7 +42,7 @@ def extract_hand_poses(
 
     # Call Modal function
     import modal
-    run_hamer = modal.Function.lookup("flexa-hamer", "run_hamer_inference")
+    run_hamer = modal.Function.from_name("flexa-hamer", "run_hamer_inference")
     result = run_hamer.remote(frame_bytes)
 
     detection_rate = result.get("detection_rate", 0)
