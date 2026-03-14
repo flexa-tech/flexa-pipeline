@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T15:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 16: Re-run pipeline+sim with dual proximity gates — STACKED=False, IK bottleneck (RMS=0.099m)
+last_activity: 2026-03-14 — Completed quick task 17: Clean grasping in calibration — debounce before grasp centroid anchor
 progress:
   total_phases: 3
   completed_phases: 3
@@ -37,6 +37,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-014: Re-run pipeline with proximity gating — STACKED=False, grasping 66%->17%, IK bottleneck
 - [x] QT-015: Sim-side proximity gate — close fingers only when palm < 5cm from block
 - [x] QT-016: Re-run pipeline+sim with dual proximity gates — STACKED=False, IK bottleneck (RMS=0.099m)
+- [x] QT-017: Clean grasping in calibration — debounce before grasp centroid anchor
 
 ### Quick Tasks Completed
 
@@ -58,6 +59,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 14 | Re-run pipeline — grasping 66%->17%, STACKED=False (IK bottleneck) | 2026-03-14 | — | [14-re-run-pipeline-with-proximity-gated-gra](./quick/14-re-run-pipeline-with-proximity-gated-gra/) |
 | 15 | Sim-side proximity gate — close fingers only when palm < 5cm | 2026-03-14 | 5fc98f7 | [15-sim-side-proximity-gate-close-fingers-on](./quick/15-sim-side-proximity-gate-close-fingers-on/) |
 | 16 | Re-run pipeline+sim with dual proximity gates — STACKED=False (IK bottleneck) | 2026-03-14 | — | [16-re-run-pipeline-and-sim-with-dual-proxim](./quick/16-re-run-pipeline-and-sim-with-dual-proxim/) |
+| 17 | Clean grasping in calibration — debounce before grasp centroid anchor | 2026-03-14 | 058f835 | [17-clean-grasping-in-calibration-debounce-b](./quick/17-clean-grasping-in-calibration-debounce-b/) |
 
 ## Project Reference
 
