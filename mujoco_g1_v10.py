@@ -257,22 +257,25 @@ def render_task(task_name: str):
     obj_qadr = [model.jnt_qposadr[j] for j in obj_jids]
     obj_body_ids = [jid(model, nm, mujoco.mjtObj.mjOBJ_BODY) for nm in obj_names]
 
-    # Derive block positions from wrist trajectory during grip phases
+    # Derive block positions from calibrated objects or wrist trajectory
     table_x_offset = 0.32 - 0.5
     n = len(wrist)
     grip_idx = np.where(grasping > 0)[0]
 
-    if len(grip_idx) >= 10:
-        # Pick position: where the hand is at GRIP ONSET (first 15% of grip)
+    if len(obj_xy) >= 2:
+        # Use provided object positions directly (from --objects or detection)
+        names = list(obj_xy.keys())
+        desired_pick_xy = obj_xy[names[0]].copy()
+        desired_support_xy = obj_xy[names[1]].copy()
+        placement_source = "objects_sim"
+    elif len(grip_idx) >= 10:
+        # Fall back: derive from wrist trajectory during grip phases
         onset_count = max(5, len(grip_idx) // 7)
         grip_onset = grip_idx[:onset_count]
         desired_pick_xy = wrist[grip_onset, :2].mean(axis=0)
 
-        # Place position: where the hand is at GRIP END (last 15% of grip)
         grip_offset = grip_idx[-onset_count:]
         desired_place_xy = wrist[grip_offset, :2].mean(axis=0)
-
-        # Support block goes at the place position (block gets stacked on it)
         desired_support_xy = desired_place_xy.copy()
 
         # Ensure minimum separation so blocks don't overlap at start
@@ -285,10 +288,12 @@ def render_task(task_name: str):
             else:
                 direction = np.array([0.0, -min_sep])
             desired_support_xy = desired_pick_xy + direction
+        placement_source = "wrist trajectory"
     else:
         # No grip data — fall back to wrist midpoint
         desired_pick_xy = wrist[n // 4, :2].copy()
         desired_support_xy = wrist[3 * n // 4, :2].copy()
+        placement_source = "wrist trajectory"
 
     # Clamp to reachable table area
     table_xy_min = np.array([0.15, -0.40])
@@ -296,13 +301,12 @@ def render_task(task_name: str):
     desired_pick_xy = np.clip(desired_pick_xy, table_xy_min, table_xy_max)
     desired_support_xy = np.clip(desired_support_xy, table_xy_min, table_xy_max)
 
-    print(f"  Block placement from wrist trajectory:")
+    print(f"  Block placement from {placement_source}:")
     print(f"    Pick block at:    XY=({desired_pick_xy[0]:.3f}, {desired_pick_xy[1]:.3f})")
     print(f"    Support block at: XY=({desired_support_xy[0]:.3f}, {desired_support_xy[1]:.3f})")
     print(f"    Separation: {np.linalg.norm(desired_pick_xy - desired_support_xy):.3f}m")
 
     # Determine which calibrated object is pick vs support
-    # (pick = closer to grip onset wrist, support = other)
     pick_nm = min(obj_names, key=lambda nm: np.linalg.norm(obj_xy[nm] - desired_pick_xy))
     support_nm = [x for x in obj_names if x != pick_nm][0] if len(obj_names) >= 2 else None
 
@@ -312,15 +316,21 @@ def render_task(task_name: str):
         late = grip_idx[-max(1, len(grip_idx) // 2):] if len(grip_idx) else np.array([n - 10])
     ls, le = int(late[0]), int(min(late[-1] + 5, n - 1))
 
-    # Place blocks at trajectory-derived positions
-    obj_xy[pick_nm] = desired_pick_xy - np.array([table_x_offset, 0.0])
-    if support_nm is not None:
-        obj_xy[support_nm] = desired_support_xy - np.array([table_x_offset, 0.0])
-
-    for nm, qa in zip(obj_names, obj_qadr):
-        xy = obj_xy[nm]
-        data.qpos[qa:qa+3] = [xy[0] + table_x_offset, xy[1], G1_TABLE_HEIGHT + BLOCK_HALF + 0.01]
-        data.qpos[qa+3:qa+7] = [1, 0, 0, 0]
+    if placement_source == "objects_sim":
+        # obj_xy already in sim-space; use directly
+        for nm, qa in zip(obj_names, obj_qadr):
+            xy = obj_xy[nm]
+            data.qpos[qa:qa+3] = [xy[0], xy[1], G1_TABLE_HEIGHT + BLOCK_HALF + 0.01]
+            data.qpos[qa+3:qa+7] = [1, 0, 0, 0]
+    else:
+        # Wrist-trajectory derived: apply table_x_offset round-trip
+        obj_xy[pick_nm] = desired_pick_xy - np.array([table_x_offset, 0.0])
+        if support_nm is not None:
+            obj_xy[support_nm] = desired_support_xy - np.array([table_x_offset, 0.0])
+        for nm, qa in zip(obj_names, obj_qadr):
+            xy = obj_xy[nm]
+            data.qpos[qa:qa+3] = [xy[0] + table_x_offset, xy[1], G1_TABLE_HEIGHT + BLOCK_HALF + 0.01]
+            data.qpos[qa+3:qa+7] = [1, 0, 0, 0]
 
     for qa, v in zip(arm_qa, SEED):
         data.qpos[qa] = v
