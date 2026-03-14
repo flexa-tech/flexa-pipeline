@@ -4,7 +4,7 @@ milestone: v0.3
 milestone_name: milestone
 status: verifying
 last_updated: "2026-03-14T14:00:00Z"
-last_activity: 2026-03-14 — Completed quick task 4: Replace kinematic attachment with physics-based grasping
+last_activity: 2026-03-14 — Completed quick task 6: Fix HaMeR calibration — use wrist_pixel depth unprojection
 progress:
   total_phases: 3
   completed_phases: 3
@@ -26,6 +26,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 - [x] QT-003: End-to-end HaMeR pipeline test on stack2
 - [x] QT-004: Replace kinematic attachment with physics-based grasping
 - [x] QT-005: Fix HaMeR mesh model loading on Modal
+- [x] QT-006: Fix HaMeR calibration — use wrist_pixel depth unprojection
 
 ### Quick Tasks Completed
 
@@ -36,6 +37,7 @@ Last activity: 2026-03-14 — Completed quick task 4: Physics-based grasping (ST
 | 3 | End-to-end HaMeR pipeline test on stack2 | 2026-03-14 | 98f60a5 | [3-end-to-end-hamer-pipeline-test-on-stack2](./quick/3-end-to-end-hamer-pipeline-test-on-stack2/) |
 | 4 | Replace kinematic attachment with physics-based grasping | 2026-03-14 | 4e94895 | [4-replace-kinematic-attachment-with-physic](./quick/4-replace-kinematic-attachment-with-physic/) |
 | 4 | Replace kinematic attachment with physics-based grasping | 2026-03-14 | 4e94895 | [4-replace-kinematic-attachment-with-physic](./quick/4-replace-kinematic-attachment-with-physic/) |
+| 6 | Fix HaMeR calibration — use wrist_pixel depth unprojection | 2026-03-14 | 8fde274 | [6-fix-hamer-calibration-use-wrist-pixel-de](./quick/6-fix-hamer-calibration-use-wrist-pixel-de/) |
 
 ## Project Reference
 
@@ -85,7 +87,7 @@ See: .planning/PROJECT.md (updated 2026-03-14)
   - Grasping heuristic improved: aspect-ratio based (was box-area based)
   - HaMeR mesh recovery WORKING: 942/951 frames with wrist_3d_camera output
   - Fixed: np.str dtype, dict input format, 256x256 crop, real checkpoints
-  - Calibration mismatch: HaMeR camera-frame coords map outside G1 workspace (needs calibration fix)
+  - Calibration mismatch FIXED: wrist_3d_camera was crop-relative; now uses depth unprojection (X=[0.196,0.546])
   - Pipeline completes all 7 stages with --hamer flag
   - Simulation renders successfully (robot grasps and moves block, STACKED=False)
 - Phase 3 plan 02 code complete: grasp visual quality
