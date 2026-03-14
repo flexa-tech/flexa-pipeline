@@ -69,7 +69,8 @@ def run_synthetic(robot, task, session_name=None):
 
 
 def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=None,
-                     trim_enabled=False, trim_start=None, trim_end=None):
+                     trim_enabled=False, trim_start=None, trim_end=None,
+                     use_hamer=True):
     """Real R3D mode: full pipeline from .r3d to simulation video."""
     total = 7
     r3d_path = Path(r3d_path).resolve()
@@ -106,7 +107,8 @@ def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=No
     # Try HaMeR (GPU, via Modal) first, fall back to MediaPipe
     log_stage(2, total, "Hand tracking -> trajectory JSON")
     traj_path = str(session_dir / f"{session_name}_hand_trajectory.json")
-    trajectory = _run_hand_tracking(video_path, session_name, session_dir, traj_path)
+    trajectory = _run_hand_tracking(video_path, session_name, session_dir, traj_path,
+                                     use_hamer=use_hamer)
     log_stage(2, total, "Hand tracking", "done")
 
     # Prepare retarget data + copy R3D (prerequisites for object detection and wrist reconstruction)
@@ -188,21 +190,25 @@ def run_r3d_pipeline(r3d_path, robot, task, session_name=None, objects_manual=No
     return video_path
 
 
-def _run_hand_tracking(video_path, session_name, session_dir, traj_path):
+def _run_hand_tracking(video_path, session_name, session_dir, traj_path,
+                       use_hamer=True):
     """Run hand tracking: try HaMeR via Modal, fall back to MediaPipe."""
     trajectory = None
 
     # Try HaMeR (GPU) first
-    try:
-        from egocrowd.hand_pose import extract_hand_poses
-        frames_dir = str(session_dir / "frames")
-        result = extract_hand_poses(frames_dir)
-        # Convert HaMeR output to trajectory format
-        if result:
-            trajectory = _hamer_to_trajectory(result, video_path)
-            print("  Hand tracking: HaMeR (GPU)")
-    except (ImportError, NotImplementedError, Exception) as e:
-        print(f"  HaMeR unavailable ({type(e).__name__}), using MediaPipe")
+    if use_hamer:
+        try:
+            from egocrowd.hand_pose import extract_hand_poses
+            frames_dir = str(session_dir / "frames")
+            result = extract_hand_poses(frames_dir)
+            # Convert HaMeR output to trajectory format
+            if result:
+                trajectory = _hamer_to_trajectory(result, video_path)
+                print("  Hand tracking: HaMeR (GPU)")
+        except (ImportError, NotImplementedError, Exception) as e:
+            print(f"  HaMeR unavailable ({type(e).__name__}), using MediaPipe")
+    else:
+        print("  HaMeR disabled (--no-hamer), using MediaPipe")
 
     # Fall back to MediaPipe
     if trajectory is None:
@@ -251,15 +257,21 @@ def _hamer_to_trajectory(hamer_result, video_path):
             "timestamp": round(i / fps, 4),
             "hands": [],
         }
-        if ts.get("wrist_pixel"):
+        if ts.get("wrist_pixel") or ts.get("detected"):
+            wp = ts.get("wrist_pixel", [0, 0])
             hand_data = {
                 "hand": "right",
-                "confidence": 0.9,
+                "confidence": ts.get("confidence", 0.9),
                 "wrist": {
-                    "position": {"x": ts["wrist_pixel"][0], "y": ts["wrist_pixel"][1], "z": 0},
+                    "position": {"x": wp[0], "y": wp[1], "z": 0},
                 },
                 "grasping": ts.get("grasping", False),
             }
+            # TRK-05: Pass through HaMeR 3D wrist position (camera frame)
+            if ts.get("wrist_3d_camera"):
+                hand_data["wrist_3d_camera"] = ts["wrist_3d_camera"]
+            if ts.get("joints_3d"):
+                hand_data["joints_3d"] = ts["joints_3d"]
             frame_data["hands"].append(hand_data)
         trajectory["frames"].append(frame_data)
 
@@ -326,6 +338,9 @@ def _build_retarget_data(session_name, session_dir, trajectory):
                 wrist_pos = hand.get("wrist", {}).get("position", {})
                 ts["wrist_pixel"] = [wrist_pos.get("x", 0), wrist_pos.get("y", 0)]
                 ts["grasping"] = hand.get("grasping", False)
+                # TRK-05: Pass through HaMeR camera-frame 3D wrist
+                if hand.get("wrist_3d_camera"):
+                    ts["wrist_3d_camera"] = hand["wrist_3d_camera"]
             else:
                 ts["wrist_pixel"] = None
                 ts["grasping"] = False
@@ -388,6 +403,10 @@ Examples:
                         help="Session name (default: derived from filename)")
     parser.add_argument("--output", type=str, default=None,
                         help="Output directory (default: sim_renders/)")
+    parser.add_argument("--hamer", action="store_true", default=True,
+                        help="Try HaMeR for hand tracking (default: True)")
+    parser.add_argument("--no-hamer", dest="hamer", action="store_false",
+                        help="Skip HaMeR, use MediaPipe only")
     parser.add_argument("--trim", action="store_true", default=False,
                         help="Trim trajectory to action window (15-30s)")
     parser.add_argument("--trim-start", type=int, default=None,
@@ -413,6 +432,7 @@ Examples:
             trim_enabled=args.trim,
             trim_start=args.trim_start,
             trim_end=args.trim_end,
+            use_hamer=args.hamer,
         )
 
     elapsed = time.time() - t0

@@ -68,6 +68,26 @@ def pixel_to_world(u, v, depth_map, meta, r3d_frame):
     return point_world
 
 
+def cam_to_world(point_cam, pose):
+    """Transform a camera-frame point to world frame using R3D pose.
+
+    Args:
+        point_cam: (3,) array-like, point in camera coordinates
+        pose: R3D pose [tx, ty, tz, qw, qx, qy, qz]
+
+    Returns:
+        (3,) ndarray, point in world coordinates
+    """
+    tx, ty, tz = pose[0], pose[1], pose[2]
+    qw, qx, qy, qz = pose[3], pose[4], pose[5], pose[6]
+    R = np.array([
+        [1-2*(qy**2+qz**2), 2*(qx*qy-qw*qz), 2*(qx*qz+qw*qy)],
+        [2*(qx*qy+qw*qz), 1-2*(qx**2+qz**2), 2*(qy*qz-qw*qx)],
+        [2*(qx*qz-qw*qy), 2*(qy*qz+qw*qx), 1-2*(qx**2+qy**2)]
+    ])
+    return R @ np.array(point_cam) + np.array([tx, ty, tz])
+
+
 def _find_gaps(nan_mask):
     """Find contiguous NaN gap regions. Returns list of (start, end) index tuples."""
     gaps = []
@@ -175,19 +195,43 @@ def process_session(session):
     print(f"  R3D: {meta['w']}x{meta['h']} @ {meta['fps']}fps, {len(meta['poses'])} poses")
     fps_ratio = meta["fps"] / 30.0  # R3D 60fps, our pipeline 30fps
 
+    # TRK-05: Detect if HaMeR 3D wrist data is available
+    has_hamer_3d = any(t.get("wrist_3d_camera") for t in ts)
+    if has_hamer_3d:
+        print(f"  Using HaMeR 3D wrist output (TRK-05: skip depth unprojection)")
+    else:
+        print(f"  Using depth-map unprojection (MediaPipe mode)")
+
     # Process each frame
     wrist_3d_world = []
     grasping = []
     failed = 0
     for i, t in enumerate(ts):
         wp = t.get("wrist_pixel")
-        if wp is None:
+        if wp is None and not t.get("wrist_3d_camera"):
             wrist_3d_world.append(None)
             grasping.append(t.get("grasping", False))
             failed += 1
             continue
 
         r3d_idx = min(int(i * fps_ratio), len(meta["poses"]) - 1)
+
+        # TRK-05: Use HaMeR 3D wrist when available (skip depth lookup)
+        if t.get("wrist_3d_camera"):
+            point_cam = np.array(t["wrist_3d_camera"])
+            pose_idx = min(r3d_idx, len(meta["poses"]) - 1)
+            pose = meta["poses"][pose_idx]
+            point = cam_to_world(point_cam, pose)
+            wrist_3d_world.append(point.tolist())
+            grasping.append(t.get("grasping", False))
+            continue
+
+        # Fallback: depth-map unprojection (MediaPipe path)
+        if wp is None:
+            wrist_3d_world.append(None)
+            grasping.append(t.get("grasping", False))
+            failed += 1
+            continue
 
         # Load depth for this frame
         try:
