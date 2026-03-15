@@ -37,6 +37,10 @@ hamer_image = (
         r"C:\Users\chris\clawd\pipeline\mano\mano_v1_2\models",
         remote_path="/hamer/_DATA/data/mano",
     )
+    .add_local_file(
+        r"C:\Users\chris\clawd\pipeline\mano\mano_mean_params.npz",
+        remote_path="/hamer/_DATA/data/mano_mean_params.npz",
+    )
 )
 
 hamer_cache = modal.Volume.from_name("hamer-cache", create_if_missing=True)
@@ -64,8 +68,42 @@ def run_hamer_bimanual(
     import numpy as np
     import cv2
 
-    sys_path_insert = __import__("sys").path
-    sys_path_insert.insert(0, "/hamer")
+    import sys as _sys
+    _sys.path.insert(0, "/hamer")
+
+    # Monkey-patch pyrender to avoid OSMesa import crash
+    # HaMeR imports pyrender at module level — we fake the entire module
+    import unittest.mock
+    import types
+
+    mock = unittest.mock.MagicMock
+    fake_pyrender = types.ModuleType("pyrender")
+    # Add every attribute HaMeR's renderer.py accesses
+    for attr in ["OffscreenRenderer", "Mesh", "Scene", "Node", "camera",
+                 "IntrinsicsCamera", "DirectionalLight", "PointLight",
+                 "SpotLight", "RenderFlags", "Viewer", "Primitive",
+                 "MetallicRoughnessMaterial", "GLTF", "Light",
+                 "OrthographicCamera", "PerspectiveCamera", "Texture",
+                 "TextAlign", "Trackball"]:
+        setattr(fake_pyrender, attr, mock())
+    fake_pyrender.RenderFlags = mock()
+    fake_pyrender.RenderFlags.RGBA = 1
+    fake_pyrender.RenderFlags.ALL_WIREFRAME = 2
+
+    _sys.modules["pyrender"] = fake_pyrender
+    _sys.modules["pyrender.constants"] = mock()
+    _sys.modules["pyrender.light"] = mock()
+    _sys.modules["pyrender.node"] = mock()
+    _sys.modules["pyrender.mesh"] = mock()
+    _sys.modules["pyrender.scene"] = mock()
+    _sys.modules["pyrender.camera"] = mock()
+    _sys.modules["pyrender.renderer"] = mock()
+    _sys.modules["pyrender.offscreen"] = mock()
+    _sys.modules["pyrender.viewer"] = mock()
+    _sys.modules["pyrender.primitive"] = mock()
+    _sys.modules["pyrender.material"] = mock()
+    print("Patched pyrender to skip OpenGL")
+
     from hamer.models import load_hamer, DEFAULT_CHECKPOINT
     from hamer.utils import recursive_to
     from hamer.datasets.vitdet_dataset import ViTDetDataset
@@ -73,16 +111,49 @@ def run_hamer_bimanual(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
-    # Verify MANO
     assert os.path.exists("./_DATA/data/mano/MANO_RIGHT.pkl"), "MANO_RIGHT.pkl missing"
 
-    # Download model if needed
-    try:
+    # Check if cached checkpoint exists in persistent volume
+    import shutil
+    cache_dir = "/root/.cache/hamer"
+    cached_ckpt = f"{cache_dir}/hamer_ckpts/checkpoints/hamer.ckpt"
+    expected_ckpt = "./_DATA/hamer_ckpts/checkpoints/hamer.ckpt"
+    
+    if os.path.exists(cached_ckpt):
+        # Restore from cache
+        print("Restoring HaMeR from cache...")
+        if not os.path.exists("./_DATA/hamer_ckpts"):
+            shutil.copytree(f"{cache_dir}/hamer_ckpts", "./_DATA/hamer_ckpts")
+        # Also restore data dir (mano_mean_params.npz etc)
+        cached_data = f"{cache_dir}/data"
+        if os.path.exists(cached_data) and not os.path.exists("./_DATA/data/mano_mean_params.npz"):
+            # Merge cached data with existing data
+            for f in os.listdir(cached_data):
+                src = f"{cached_data}/{f}"
+                dst = f"./_DATA/data/{f}"
+                if not os.path.exists(dst):
+                    if os.path.isfile(src):
+                        shutil.copy2(src, dst)
+                    else:
+                        shutil.copytree(src, dst)
+        print(f"Restored. Checkpoint: {os.path.exists(expected_ckpt)}, mean_params: {os.path.exists('./_DATA/data/mano_mean_params.npz')}")
+    elif not os.path.exists(expected_ckpt):
+        # Download fresh (into CWD/_DATA as HaMeR expects)
+        print("Downloading HaMeR checkpoint (first time, ~5GB)...")
         from hamer.models import download_models
         from hamer.configs import CACHE_DIR_HAMER
         download_models(CACHE_DIR_HAMER)
-    except Exception as e:
-        print(f"download_models: {e}")
+        # Cache ALL of _DATA to persistent volume for next time
+        if os.path.exists("./_DATA"):
+            os.makedirs(f"{cache_dir}", exist_ok=True)
+            if os.path.exists("./_DATA/hamer_ckpts") and not os.path.exists(f"{cache_dir}/hamer_ckpts"):
+                shutil.copytree("./_DATA/hamer_ckpts", f"{cache_dir}/hamer_ckpts")
+                print(f"Cached hamer_ckpts to {cache_dir}")
+            if os.path.exists("./_DATA/data") and not os.path.exists(f"{cache_dir}/data"):
+                shutil.copytree("./_DATA/data", f"{cache_dir}/data")
+                print(f"Cached data to {cache_dir}")
+    
+    print(f"Checkpoint ready: {os.path.exists(expected_ckpt)}")
 
     model, model_cfg = load_hamer(DEFAULT_CHECKPOINT)
     if hasattr(model, "renderer"): model.renderer = None
@@ -214,19 +285,12 @@ def main(session: str = "stack2"):
             {"box": [img_width//2, 0, img_width, h], "score": 0.5, "label": "hand_left"},
         ])
 
-    # Process in batches
-    batch_size = 50
-    all_results = []
-    for b in range(0, len(frame_bytes), batch_size):
-        batch_frames = frame_bytes[b:b+batch_size]
-        batch_indices = frame_indices[b:b+batch_size]
-        batch_bboxes = all_bboxes[b:b+batch_size]
-        
-        print(f"  Batch {b//batch_size + 1}: frames {batch_indices[0]}-{batch_indices[-1]}")
-        result = run_hamer_bimanual.remote(
-            batch_frames, batch_indices, batch_bboxes, session, img_width
-        )
-        all_results.extend(result["results"])
+    # Process ALL frames in a single batch (checkpoint download is expensive)
+    print(f"  Sending all {len(frame_bytes)} frames to Modal...")
+    result = run_hamer_bimanual.remote(
+        frame_bytes, frame_indices, all_bboxes, session, img_width
+    )
+    all_results = result["results"]
 
     # Combine
     both = sum(1 for r in all_results if len(r["hands"]) >= 2)
